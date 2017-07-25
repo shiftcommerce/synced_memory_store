@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'synced_memory_store/store'
+require 'active_support/cache/redis_store'
 RSpec.describe SyncedMemoryStore::Store do
   # In the test, we wait for the subscriber to make the test more predictable
   let!(:subscriber) { SyncedMemoryStore::Subscriber.instance(wait: true) }
