@@ -9,10 +9,10 @@ module SyncedMemoryStore
       super(options)
     end
 
-    def write(key, entry, silent: false, **options)
+    def write(key, entry, silent: false, persist: true, **options)
       options = merged_options(options)
-      super.tap do
-        persistent_store.write(key, entry, options)
+      super(key, entry, options).tap do
+        persistent_store.write(key, entry, options) if persist
         inform_others_of_write(normalize_key(key, options), entry, options) unless silent
       end
     end
@@ -30,24 +30,21 @@ module SyncedMemoryStore
 
     def fetch(name, options = nil, &block)
       super do
-        persistent_store.fetch(name, options) do
-          if block_given?
-            value = yield name
-            throw :abort, value
-          else
-            throw :abort, nil # Do not write to cache if it doesnt exist
-          end
+        persistent_store.fetch(name, options, &block)
+      end
+    end
 
-        end
+    def delete(name, silent: false, persist: true, **options)
+      super(name, options).tap do
+        persistent_store.delete(name, options) if persist
+        inform_others_of_delete(name, options) unless silent
       end
     end
 
     private
 
     def save_block_result_to_cache(name, options)
-      catch(:abort) do
-        super(name, silent: true, **options)
-      end
+      super(name, silent: true, **options)
     end
 
     def inform_others_of_write(key, entry, options)
@@ -56,9 +53,9 @@ module SyncedMemoryStore
       end
     end
 
-    def inform_others_of_writes(writes)
+    def inform_others_of_delete(key, options)
       mon_synchronize do
-        redis.call([:publish, :synced_memory_store_writes, JSON.dump(writes)])
+        redis.call([:publish, :synced_memory_store_deletes, key])
       end
     end
 

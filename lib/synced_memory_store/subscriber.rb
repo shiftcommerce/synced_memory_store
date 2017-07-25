@@ -27,7 +27,7 @@ module SyncedMemoryStore
     def start_thread
       self.thread = Thread.new do
         begin
-          redis.subscribe(:synced_memory_store_writes) do |on|
+          redis.subscribe(:synced_memory_store_writes, :synced_memory_store_deletes) do |on|
             on.subscribe do |channel, subscriptions|
               puts "Subscribed to ##{channel} (#{subscriptions} subscriptions)"
               self.subscribed = true
@@ -35,13 +35,7 @@ module SyncedMemoryStore
 
             on.message do |channel, message|
               puts "##{channel}: #{message}"
-              messages = JSON.parse(message)
-              subscriptions.each do |cache_instance|
-                messages.each do |message_decoded|
-                  entry = ActiveSupport::Cache::Entry.new(message_decoded['entry'], message_decoded['options'])
-                  cache_instance.send(:write_entry, message_decoded['key'], entry, message_decoded['options'])
-                end
-              end
+              send("on_#{channel}".to_sym, message)
               redis.unsubscribe if message == "exit"
             end
 
@@ -60,6 +54,21 @@ module SyncedMemoryStore
     end
 
     private
+
+    def on_synced_memory_store_writes(message)
+      messages = JSON.parse(message)
+      subscriptions.each do |cache_instance|
+        messages.each do |message_decoded|
+          cache_instance.write(message_decoded['key'], message_decoded['entry'], silent: true, persist: false, **message_decoded['options'])
+        end
+      end
+    end
+
+    def on_synced_memory_store_deletes(message)
+      subscriptions.each do |cache_instance|
+        cache_instance.delete(message, silent: true, persist: false)
+      end
+    end
 
     def subscribed?
       subscribed

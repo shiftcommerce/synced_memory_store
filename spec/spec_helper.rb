@@ -9,5 +9,5 @@ RSpec.configure do |config|
   config.expect_with :rspec do |c|
     c.syntax = :expect
   end
-  config.wait_timeout = 120 # seconds
+  config.wait_timeout = 10 # seconds
 end
