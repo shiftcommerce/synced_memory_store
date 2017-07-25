@@ -3,7 +3,7 @@ module SyncedMemoryStore
     include MonitorMixin
 
     def initialize(cache:, redis: Redis.new(url: ENV['REDIS_URL']).client, subscriber: SyncedMemoryStore::Subscriber.instance, **options)
-      self.persistent_store = PersistentStore.new(cache: cache)
+      self.persistent_store = cache
       self.redis = redis
       subscriber.subscribe self
       super(options)
