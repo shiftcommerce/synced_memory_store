@@ -1,10 +1,10 @@
 require 'redis'
 module SyncedMemoryStore
   class Subscriber
-    def self.instance
+    def self.instance(wait: false)
       Thread.current[:synced_memory_store] ||= new.tap do |instance|
         instance.configure
-        instance.start
+        instance.start(wait: wait)
       end
     end
 
@@ -13,15 +13,24 @@ module SyncedMemoryStore
     end
 
     def configure
+      self.subscribed = false
       self.subscriptions = []
     end
 
-    def start
+    def start(wait: false)
+      start_thread
+      if wait
+        wait_for_subscription
+      end
+    end
+
+    def start_thread
       self.thread = Thread.new do
         begin
           redis.subscribe(:synced_memory_store_writes) do |on|
             on.subscribe do |channel, subscriptions|
               puts "Subscribed to ##{channel} (#{subscriptions} subscriptions)"
+              self.subscribed = true
             end
 
             on.message do |channel, message|
@@ -30,7 +39,7 @@ module SyncedMemoryStore
               subscriptions.each do |cache_instance|
                 messages.each do |message_decoded|
                   entry = ActiveSupport::Cache::Entry.new(message_decoded['entry'], message_decoded['options'])
-                  cache_instance.send(:write_entry, message_decoded['key'], entry, message_decoded['options'].merge(persist: false))
+                  cache_instance.send(:write_entry, message_decoded['key'], entry, message_decoded['options'])
                 end
               end
               redis.unsubscribe if message == "exit"
@@ -52,11 +61,24 @@ module SyncedMemoryStore
 
     private
 
+    def subscribed?
+      subscribed
+    end
+
+    def wait_for_subscription
+      start = Time.now
+      while Time.now < (start + 10.seconds)
+        break if subscribed?
+        sleep 0.1
+      end
+      raise "Could not subscribe to redis in 10 seconds" unless subscribed?
+    end
+
     def redis
       @redis ||= Redis.new
     end
 
-    attr_accessor :thread, :subscriptions
+    attr_accessor :thread, :subscriptions, :subscribed
 
     private_class_method :initialize
     private_class_method :new
