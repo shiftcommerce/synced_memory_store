@@ -14,7 +14,7 @@ RSpec.describe SyncedMemoryStore::Store do
       wait_for { instance_2.fetch("key_1") }.to eq("key_1 value")
     end
 
-    it "Should add to instance 2 when a new key is added to instance 1 from a read miss" do
+    it "should fetch new cached value from redis when a new key is added to instance 1 from a read miss" do
       instance_1.fetch("key_1") do
         "key_1 value"
       end
@@ -32,19 +32,12 @@ RSpec.describe SyncedMemoryStore::Store do
       wait_for { instance_2.fetch("key_1") }.to eq("key_1 value")
     end
 
-    it "Should not add to instance 2 when a new key is added to instance 1 from a read miss" do
-      instance_1.fetch("key_1") do
-        "key_1 value"
-      end
-      wait_for { instance_2.fetch("key_1") }.not_to eq("key_1 value")
-    end
-
     it "should fetch the value from underlying cache and send to others if it doesnt have it" do
       cache_1.write("key_1", "key_1 value")
       instance_1.fetch("key_1") do
         raise "It should not get here"
       end
-      wait_for { instance_2.fetch("key_1") }.to eq("key_1 value")
+      wait_for { instance_2.fetch("key_1") }.not_to eq("key_1 value")
 
     end
 

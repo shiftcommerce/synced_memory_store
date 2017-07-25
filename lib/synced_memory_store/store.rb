@@ -9,11 +9,11 @@ module SyncedMemoryStore
       super(options)
     end
 
-    def write(key, entry, options = {})
+    def write(key, entry, silent: false, **options)
       options = merged_options(options)
       super.tap do
         persistent_store.write(key, entry, options)
-        inform_others_of_write(normalize_key(key, options), entry, options)
+        inform_others_of_write(normalize_key(key, options), entry, options) unless silent
       end
     end
 
@@ -46,7 +46,7 @@ module SyncedMemoryStore
 
     def save_block_result_to_cache(name, options)
       catch(:abort) do
-        super
+        super(name, silent: true, **options)
       end
     end
 
