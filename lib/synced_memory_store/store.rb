@@ -9,14 +9,16 @@ module SyncedMemoryStore
 
     # Creates a new instance registered with the subscriber for updates
     # @param [ActiveSupport::Cache::Store] cache - The cache store to use for persistent storage - i.e. memcache, redis etc..
+    # @param [Boolean] sync - If true (true by default) - then the store is kept in sync using redis
     # @param [Redis::Client] redis - The redis client to use - defaults to a new redis client with url set by ENV['REDIS_URL']
     # @param [SyncedMemoryStore::Subscriber] subscriber - The single subscriber to register itself with (defaults to a global instance)
     # @param [Hash] options - Standard options for a cache store
-    def initialize(cache:, redis: Redis.new(url: ENV['REDIS_URL']).client, subscriber: SyncedMemoryStore::Subscriber.instance, **options)
+    def initialize(cache:, sync: true, redis: Redis.new(url: ENV['REDIS_URL']).client, subscriber: SyncedMemoryStore::Subscriber.instance, **options)
       self.cache = cache
+      self.sync = sync
       self.redis = redis
       self.uuid = SecureRandom.uuid
-      subscriber.subscribe self
+      subscriber.subscribe self if sync
       super(options)
     end
 
@@ -68,7 +70,7 @@ module SyncedMemoryStore
     def delete(name, silent: false, persist: true, **options)
       super(name, options).tap do
         cache.delete(name, options) if persist
-        inform_others_of_delete(name, options) unless silent
+        inform_others_of_delete(name, options) unless silent or !sync
       end
     end
 
@@ -85,7 +87,7 @@ module SyncedMemoryStore
 
     def write_entry(key, entry, silent: false, **options)
       super(key, entry, options).tap do
-        inform_others_of_write(key, entry, options) unless silent
+        inform_others_of_write(key, entry, options) unless silent or !sync
       end
     end
 
@@ -94,18 +96,20 @@ module SyncedMemoryStore
     end
 
     def inform_others_of_write(key, entry, options)
+      return unless sync
       mon_synchronize do
         redis.call([:publish, :synced_memory_store_writes, Marshal.dump({key: key, entry: entry, options: options, sender_uuid: uuid})])
       end
     end
 
     def inform_others_of_delete(key, options)
+      return unless sync
       mon_synchronize do
         redis.call([:publish, :synced_memory_store_deletes, Marshal.dump({key: key, sender_uuid: uuid})])
       end
     end
 
-    attr_accessor :cache, :redis
+    attr_accessor :cache, :redis, :sync
     attr_writer :uuid
   end
 end
