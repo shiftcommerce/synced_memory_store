@@ -1,9 +1,9 @@
 require 'redis'
 module SyncedMemoryStore
   class Subscriber
-    def self.instance(wait: false)
+    def self.instance(wait: false, logger: nil)
       Thread.current[:synced_memory_store] ||= new.tap do |instance|
-        instance.configure
+        instance.configure(logger: logger)
         instance.start(wait: wait)
       end
     end
@@ -12,8 +12,13 @@ module SyncedMemoryStore
       subscriptions << cache_instance unless subscriptions.include?(cache_instance)
     end
 
-    def configure
+    def configure(logger: nil)
       self.subscribed = false
+      self.logger = logger
+      self.subscriptions = []
+    end
+
+    def reset!
       self.subscriptions = []
     end
 
@@ -29,18 +34,18 @@ module SyncedMemoryStore
         begin
           redis.subscribe(:synced_memory_store_writes, :synced_memory_store_deletes) do |on|
             on.subscribe do |channel, subscriptions|
-              puts "Subscribed to ##{channel} (#{subscriptions} subscriptions)"
+              log("Subscribed to channel #{channel}")
               self.subscribed = true
             end
 
             on.message do |channel, message|
-              puts "##{channel}: #{message}"
               send("on_#{channel}".to_sym, message)
               redis.unsubscribe if message == "exit"
             end
 
             on.unsubscribe do |channel, subscriptions|
-              puts "Unsubscribed from ##{channel} (#{subscriptions} subscriptions)"
+              log("Unsubscribed from channel #{channel}")
+              self.subscribed = false
             end
           end
         rescue Redis::BaseConnectionError => error
@@ -55,19 +60,35 @@ module SyncedMemoryStore
 
     private
 
-    def on_synced_memory_store_writes(message)
-      messages = JSON.parse(message)
-      subscriptions.each do |cache_instance|
-        messages.each do |message_decoded|
-          cache_instance.write(message_decoded['key'], message_decoded['entry'], silent: true, persist: false, **message_decoded['options'])
-        end
+    def log(msg)
+      return if logger.nil?
+      if logger.respond_to?(:tagged)
+        logger.tagged("synced_memory_store") { logger.info msg }
+      else
+        logger.info msg
       end
     end
 
-    def on_synced_memory_store_deletes(message)
+    def on_synced_memory_store_writes(message)
+      message_decoded = Marshal.load(message)
+      subscribers_informed = 0
       subscriptions.each do |cache_instance|
-        cache_instance.delete(message, silent: true, persist: false)
+        next if cache_instance.uuid == message_decoded[:sender_uuid]
+        cache_instance.write_from_subscriber(message_decoded[:key], message_decoded[:entry], silent: true, persist: false, **message_decoded[:options])
+        subscribers_informed += 1
       end
+      log("Write to key #{message_decoded[:key]} shared with #{subscribers_informed} subscribers") unless subscribers_informed == 0
+    end
+
+    def on_synced_memory_store_deletes(message)
+      message_decoded = Marshal.load(message)
+      subscribers_informed = 0
+      subscriptions.each do |cache_instance|
+        next if cache_instance.uuid == message_decoded[:sender_uuid]
+        cache_instance.delete(message_decoded[:key], silent: true, persist: false)
+        subscribers_informed += 1
+      end
+      log("Delete key #{message_decoded[:key]} shared with #{subscribers_informed} subscribers") unless subscribers_informed == 0
     end
 
     def subscribed?
@@ -87,7 +108,7 @@ module SyncedMemoryStore
       @redis ||= Redis.new
     end
 
-    attr_accessor :thread, :subscriptions, :subscribed
+    attr_accessor :thread, :subscriptions, :subscribed, :logger
 
     private_class_method :initialize
     private_class_method :new
