@@ -10,6 +10,7 @@ module SyncedMemoryStore
 
     def subscribe(cache_instance)
       subscriptions << cache_instance unless subscriptions.include?(cache_instance)
+      log("SyncedMemoryStore instance #{cache_instance.uuid} registered for updates")
     end
 
     def configure(logger: nil)
