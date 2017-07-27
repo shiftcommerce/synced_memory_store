@@ -10,14 +10,16 @@ module SyncedMemoryStore
     # Creates a new instance registered with the subscriber for updates
     # @param [ActiveSupport::Cache::Store] cache - The cache store to use for persistent storage - i.e. memcache, redis etc..
     # @param [Boolean] sync - If true (true by default) - then the store is kept in sync using redis
+    # @param [Boolean] force_miss - If true (false by default) - then the store forces a cache miss on all requests
     # @param [Redis::Client] redis - The redis client to use - defaults to a new redis client with url set by ENV['REDIS_URL']
     # @param [SyncedMemoryStore::Subscriber] subscriber - The single subscriber to register itself with (defaults to a global instance)
     # @param [Hash] options - Standard options for a cache store
-    def initialize(cache:, sync: true, redis: Redis.new(url: ENV['REDIS_URL']).client, subscriber: SyncedMemoryStore::Subscriber.instance, **options)
+    def initialize(cache:, sync: true, redis: Redis.new(url: ENV['REDIS_URL']).client, subscriber: SyncedMemoryStore::Subscriber.instance, force_miss: false, **options)
       self.cache = cache
       self.sync = sync
       self.redis = redis
       self.uuid = SecureRandom.uuid
+      self.force_miss = force_miss
       subscriber.subscribe self if sync
       super(options)
     end
@@ -42,6 +44,7 @@ module SyncedMemoryStore
     # @return [Hash] Hash containing keys and values from the cache
     def fetch_multi(*names, &block)
       raise ArgumentError, "Missing block: `#{self.class.name}#fetch_multi` requires a block." unless block_given?
+      return fetch_multi_with_forced_miss(*names, &block) if force_miss
       options = names.extract_options!
       options = merged_options(options)
       results = read_multi(*names, options)
@@ -56,6 +59,7 @@ module SyncedMemoryStore
     # @param [String] name - The key to fetch
     # @param [Hash] options - The options for a standard fetch from any cache
     def fetch(name, options = nil, &block)
+      return yield if force_miss
       super do
         cache.fetch(name, options, &block)
       end
@@ -85,6 +89,13 @@ module SyncedMemoryStore
 
     private
 
+    def fetch_multi_with_forced_miss(*names, &block)
+      names.inject({}) do |acc, key|
+        acc[key] = yield key
+        acc
+      end
+    end
+
     def write_entry(key, entry, silent: false, **options)
       super(key, entry, options).tap do
         inform_others_of_write(key, entry, options) unless silent or !sync
@@ -109,7 +120,7 @@ module SyncedMemoryStore
       end
     end
 
-    attr_accessor :cache, :redis, :sync
+    attr_accessor :cache, :redis, :sync, :force_miss
     attr_writer :uuid
   end
 end

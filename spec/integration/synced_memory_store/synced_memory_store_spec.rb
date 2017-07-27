@@ -97,4 +97,27 @@ RSpec.describe SyncedMemoryStore::Store do
       wait_for { instance_2.fetch("key_1") }.to eq("key_1 updated_value")
     end
   end
+
+  context "using two isolated instances with isolated memory caches with force miss set to true" do
+    let(:cache_1) { ActiveSupport::Cache::MemoryStore.new }
+    let(:cache_2) { ActiveSupport::Cache::MemoryStore.new }
+    let!(:instance_1) { SyncedMemoryStore::Store.new(redis: redis, cache: cache_1, force_miss: true) }
+    let!(:instance_2) { SyncedMemoryStore::Store.new(redis: redis, cache: cache_2, force_miss: true) }
+    it "should return the value of the block without accessing the cache using fetch" do
+      instance_1.write("key_1", "old value")
+      value = instance_1.fetch("key_1") do
+        "correct_value"
+      end
+      expect(value).to eql "correct_value"
+    end
+
+    it "should return the values from the block without accessing the cache using fetch_multi" do
+      instance_1.write("key_1", "old_value_1")
+      instance_1.write("key_2", "old_value_2")
+      values = instance_1.fetch_multi("key_1", "key_2") do |key|
+        "correct_value_for_#{key}"
+      end
+      expect(values).to eql("key_1" => "correct_value_for_key_1", "key_2" => "correct_value_for_key_2")
+    end
+  end
 end
