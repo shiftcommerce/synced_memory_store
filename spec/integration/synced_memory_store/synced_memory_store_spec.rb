@@ -96,6 +96,13 @@ RSpec.describe SyncedMemoryStore::Store do
       instance_1.write("key_1", "key_1 updated_value")
       wait_for { instance_2.fetch("key_1") }.to eq("key_1 updated_value")
     end
+
+    it "should reset instance 2 if instance 1 is cleared" do
+      instance_1.write("key_1", "key_1 value")
+      wait_for { instance_2.fetch("key_1") }.to eq("key_1 value")
+      instance_1.clear
+      wait_for { instance_2.fetch("key_1") }.not_to eq("key_1 value")
+    end
   end
 
   context "using two isolated instances with isolated memory caches with force miss set to true" do

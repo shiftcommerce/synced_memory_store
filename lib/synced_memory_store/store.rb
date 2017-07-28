@@ -78,6 +78,13 @@ module SyncedMemoryStore
       end
     end
 
+    def clear(silent: false, persist: true, **options)
+      super(options).tap do
+        cache.clear if persist
+        inform_others_of_clear(options) unless silent or !sync
+      end
+    end
+
     # Used internally as a public interface to write_entry - this is used by the subscriber
     # @private
     # @param [String] key - The key
@@ -117,6 +124,13 @@ module SyncedMemoryStore
       return unless sync
       mon_synchronize do
         redis.call([:publish, :synced_memory_store_deletes, Marshal.dump({key: key, sender_uuid: uuid})])
+      end
+    end
+
+    def inform_others_of_clear(options)
+      return unless sync
+      mon_synchronize do
+        redis.call([:publish, :synced_memory_store_clears, Marshal.dump({sender_uuid: uuid})])
       end
     end
 

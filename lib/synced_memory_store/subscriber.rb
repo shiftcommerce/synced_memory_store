@@ -33,7 +33,7 @@ module SyncedMemoryStore
     def start_thread
       self.thread = Thread.new do
         begin
-          redis.subscribe(:synced_memory_store_writes, :synced_memory_store_deletes) do |on|
+          redis.subscribe(:synced_memory_store_writes, :synced_memory_store_deletes, :synced_memory_store_clears) do |on|
             on.subscribe do |channel, subscriptions|
               log("Subscribed to channel #{channel}")
               self.subscribed = true
@@ -90,6 +90,17 @@ module SyncedMemoryStore
         subscribers_informed += 1
       end
       log("Delete key #{message_decoded[:key]} shared with #{subscribers_informed} subscribers") unless subscribers_informed == 0
+    end
+
+    def on_synced_memory_store_clears(message)
+      message_decoded = Marshal.load(message)
+      subscribers_informed = 0
+      subscriptions.each do |cache_instance|
+        next if cache_instance.uuid == message_decoded[:sender_uuid]
+        cache_instance.clear(silent: true, persist: false)
+        subscribers_informed += 1
+      end
+      log("Clear call shared with #{subscribers_informed} subscribers") unless subscribers_informed == 0
     end
 
     def subscribed?
