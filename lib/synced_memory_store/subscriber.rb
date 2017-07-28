@@ -1,19 +1,27 @@
 require 'redis'
+require 'thread'
 module SyncedMemoryStore
   class Subscriber
     include Singleton
+
+    def initialize
+      self.mutex = Mutex.new
+      self.subscriptions = []
+      self.subscribed = false
+    end
+
     def subscribe(cache_instance)
       subscriptions << cache_instance unless subscriptions.include?(cache_instance)
       log("SyncedMemoryStore instance #{cache_instance.uuid} registered for updates")
     end
 
     def configure(logger: nil)
-      return self if configured
-      self.subscribed = false
-      self.logger = logger
-      self.subscriptions = []
-      self.configured = true
-      self
+      mutex.synchronize do
+        next self if configured
+        self.logger = logger
+        self.configured = true
+        self
+      end
     end
 
     def reset!
@@ -21,13 +29,15 @@ module SyncedMemoryStore
     end
 
     def start(wait: false)
-      return self if started
-      start_thread
-      if wait
-        wait_for_subscription
+      mutex.synchronize do
+        next self if started
+        start_thread
+        if wait
+          wait_for_subscription
+        end
+        self.started = true
+        self
       end
-      self.started = true
-      self
     end
 
     def start_thread
@@ -120,7 +130,7 @@ module SyncedMemoryStore
       @redis ||= Redis.new
     end
 
-    attr_accessor :thread, :subscriptions, :subscribed, :logger, :configured, :started
+    attr_accessor :thread, :subscriptions, :subscribed, :logger, :configured, :started, :mutex
 
     private_class_method :initialize
     private_class_method :new
