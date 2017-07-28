@@ -1,8 +1,22 @@
 # SyncedMemoryStore
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/synced_memory_store`. To experiment with that code, run `bin/console` for an interactive prompt.
+An active support cache store that can be synced across processes using redis.
 
-TODO: Delete this and the text above, and describe your gem
+The use case for this gem is to work alongside a rails cache for 'high priority' 
+entries that should stay in sync across all processes using the shared cache.
+
+So, imagine you had 10 web processes all asking for a logged in user or an access key
+from the database.  If you were to cache this in memory normally and changed
+a user or access key in one process - the cache would then be stale in the other 9.
+So, you could use a memcache based cache or redis based - but then you are hitting
+memcache or redis on every request for something that doesnt change often.
+
+SyncedMemoryStore to the rescue
+
+It is an in memory cache in front of a secondary cache for persistence.  But
+the in memory cache is synced using redis - so as long as your REDIS_URL environment
+variable is set to the same URL - or you can configure your own redis adapter - then
+it will just work.
 
 ## Installation
 
@@ -22,7 +36,38 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+In an irb console in terminal window 1
+
+```ruby
+    persistent_cache = ActiveSupport::Cache::RedisStore.new(ENV.fetch('REDIS_URL'))
+    cache = SyncedMemoryStore::Store.new(cache: cache_1, redis: redis)
+```
+
+In an irb console in terminal window 2
+
+```ruby
+    persistent_cache = ActiveSupport::Cache::RedisStore.new(ENV.fetch('REDIS_URL'))
+    cache = SyncedMemoryStore::Store.new(cache: cache_1, redis: redis)
+```
+
+
+Then, to write a value to the cache in terminal window 1
+
+```ruby
+    cache.write("key", "it works")
+```
+
+Then, check it in terminal window 2
+
+```ruby
+    cache.fetch("key")
+    >> "it works"
+```
+
+And it has done this without querying the persistent cache - you can
+prove this by replacing the RedisStore with a MemoryStore.
+
+See the specs for more details
 
 ## Development
 
