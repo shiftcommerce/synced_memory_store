@@ -1,22 +1,19 @@
 require 'redis'
 module SyncedMemoryStore
   class Subscriber
-    def self.instance(wait: false, logger: nil)
-      Thread.current[:synced_memory_store] ||= new.tap do |instance|
-        instance.configure(logger: logger)
-        instance.start(wait: wait)
-      end
-    end
-
+    include Singleton
     def subscribe(cache_instance)
       subscriptions << cache_instance unless subscriptions.include?(cache_instance)
       log("SyncedMemoryStore instance #{cache_instance.uuid} registered for updates")
     end
 
     def configure(logger: nil)
+      return self if configured
       self.subscribed = false
       self.logger = logger
       self.subscriptions = []
+      self.configured = true
+      self
     end
 
     def reset!
@@ -24,10 +21,13 @@ module SyncedMemoryStore
     end
 
     def start(wait: false)
+      return self if started
       start_thread
       if wait
         wait_for_subscription
       end
+      self.started = true
+      self
     end
 
     def start_thread
@@ -120,7 +120,7 @@ module SyncedMemoryStore
       @redis ||= Redis.new
     end
 
-    attr_accessor :thread, :subscriptions, :subscribed, :logger
+    attr_accessor :thread, :subscriptions, :subscribed, :logger, :configured, :started
 
     private_class_method :initialize
     private_class_method :new

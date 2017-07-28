@@ -12,7 +12,7 @@ require 'ostruct'
 RSpec.describe SyncedMemoryStore::Store do
   # In the test, we wait for the subscriber to make the test more predictable
   let(:logger) { ActiveSupport::TaggedLogging.new(Logger.new(STDOUT)) }
-  let!(:subscriber) { SyncedMemoryStore::Subscriber.instance(wait: true, logger: logger) }
+  let!(:subscriber) { SyncedMemoryStore::Subscriber.instance().tap {|i| i.configure(logger: logger).start(wait: true)} }
   let!(:redis) { Redis.new(url: ENV['REDIS_URL']).tap { |r| r.flushdb }.client }
   before(:each) { subscriber.reset! }
 
