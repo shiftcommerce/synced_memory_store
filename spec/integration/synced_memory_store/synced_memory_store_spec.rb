@@ -13,7 +13,7 @@ RSpec.describe SyncedMemoryStore::Store do
   # In the test, we wait for the subscriber to make the test more predictable
   let(:logger) { ActiveSupport::TaggedLogging.new(Logger.new(STDOUT)) }
   let!(:subscriber) { SyncedMemoryStore::Subscriber.instance().tap {|i| i.configure(logger: logger).start(wait: true)} }
-  let!(:redis) { Redis.new.client }
+  let!(:redis) { Redis.new.tap { |r| r.flushdb }.client }
   before(:each) { subscriber.reset! }
 
   context "using two isolated instances with a redis underlying cache" do
