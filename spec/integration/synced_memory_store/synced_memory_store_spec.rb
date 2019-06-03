@@ -13,14 +13,15 @@ RSpec.describe SyncedMemoryStore::Store do
   # In the test, we wait for the subscriber to make the test more predictable
   let(:logger) { ActiveSupport::TaggedLogging.new(Logger.new(STDOUT)) }
   let!(:subscriber) { SyncedMemoryStore::Subscriber.instance().tap {|i| i.configure(logger: logger).start(wait: true)} }
-  let!(:redis) { Redis.new(url: ENV['REDIS_URL']).tap { |r| r.flushdb }.client }
+  let!(:redis) { Redis.new.tap { |r| r.flushdb }.client }
   before(:each) { subscriber.reset! }
 
   context "using two isolated instances with a redis underlying cache" do
-    let(:cache_1) { ActiveSupport::Cache::RedisStore.new(ENV.fetch('REDIS_URL')) }
-    let(:cache_2) { ActiveSupport::Cache::RedisStore.new(ENV.fetch('REDIS_URL')) }
+    let(:cache_1) { ActiveSupport::Cache::RedisStore.new }
+    let(:cache_2) { ActiveSupport::Cache::RedisStore.new }
     let!(:instance_1) { SyncedMemoryStore::Store.new(cache: cache_1, redis: redis, subscriber: subscriber) }
     let!(:instance_2) { SyncedMemoryStore::Store.new(cache: cache_2, redis: redis, subscriber: subscriber) }
+
     it "Should add to instance 2 when a new key is added to instance 1" do
       instance_1.write("key_1", "key_1 value")
       wait_for { instance_2.fetch("key_1") }.to eq("key_1 value")
